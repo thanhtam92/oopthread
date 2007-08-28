@@ -8,8 +8,98 @@
  */
 
 #include <pthread.h>
+#include <cassert>
 
+/// Global namespace of the library
 namespace oopt {
+
+/// Namespace for thread-specific objects
+namespace thread {
+
+// forward declaration
+template<typename Data> class Manager;
+
+
+/** General ancestor of all classes encapsulating 
+ * thread function.
+ */
+template<typename Data> struct CustomFunction
+{
+  friend class Manager<Data>;
+
+protected:
+  std::auto_ptr<const Data> m_Data;
+
+  /// Default constructor, should always be invoked one way or another
+  CustomFunction( void )
+  { }
+
+public:
+  /// This is the main thread function, override it in children
+  virtual void* main( void ) = 0;
+
+  virtual ~CustomFunction( void ) {
+    // std::cout << "~CustomFunction  " << *m_Data << std::endl; // debug
+  } // virtual destructor
+};
+
+
+
+
+/// Thread manager class
+template<typename Data> class Manager {
+private:
+  /// Thread handle
+  pthread_t m_Handle;
+
+  /// Actual thread function ...
+  static void* ThreadFunc( void* tf )
+  {
+    std::auto_ptr< CustomFunction<Data> > func_o( 
+        static_cast< CustomFunction<Data>* >( tf ) );
+    return func_o->main();
+  }
+
+protected:
+
+public:
+  Manager( void )
+  {
+    // does nothing - we don't want to fire threads right away, 
+    // preparations necessary
+  }
+
+  virtual ~Manager( void ) {
+  }
+
+  /// Launching thread, when function class is provided
+  template< template<class Data_> class FuncObj > int Launch( const Data& d )
+  {
+    return Launch< FuncObj<Data> >( d );
+  }
+
+  template< class FuncObj > int Launch( const Data& d )
+  {
+    std::auto_ptr< FuncObj > func( new FuncObj );
+    CustomFunction<Data>& f = *func;
+    f.m_Data.reset( new Data( d ) );
+
+    int res = pthread_create(
+        &m_Handle,
+        NULL, // may be changed later
+        ThreadFunc,
+        &f
+        );
+    if ( res != 0 )
+      throw "Thread starting failed !!!";  // TODO : something more elaborate ?
+
+    // if everything is OK
+    func.release();
+    return res;
+  }
+};
+
+}
 
 }
 
