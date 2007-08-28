@@ -1,6 +1,18 @@
 #ifndef _OOPTHREAD_
 #define _OOPTHREAD_
 
+/** Object-oriented pthreads wrapper.
+ *
+ * Written by Alex Jakushev,
+ * mailto:alex.jakushev@gmail.com
+ */
+
 #include <pthread.h>
 
+namespace oopt {
+
+};
+
 #endif // _OOPTHREAD_
+
+// vim: set expandtab list filetype=cpp :
