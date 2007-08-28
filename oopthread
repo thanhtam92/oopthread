@@ -16,38 +16,85 @@ namespace oopt {
 /// Namespace for thread-specific objects
 namespace thread {
 
-// forward declaration
-template<typename Data> class Manager;
+class Manager;
 
+namespace Internal {
 
-/** General ancestor of all classes encapsulating 
- * thread function.
- */
-template<typename Data> struct CustomFunction
+/// General ancestor of all thread function objects
+struct GeneralFunction
 {
-  friend class Manager<Data>;
-
-protected:
-  std::auto_ptr<const Data> m_Data;
-
-  /// Default constructor, should always be invoked one way or another
-  CustomFunction( void )
-  { }
-
 public:
   /// This is the main thread function, override it in children
   virtual void* main( void ) = 0;
 
-  virtual ~CustomFunction( void ) {
-    // std::cout << "~CustomFunction  " << *m_Data << std::endl; // debug
-  } // virtual destructor
+  virtual ~GeneralFunction( void ) {
+    // std::cout << "~GeneralFunction  " << std::endl; // debug
+  }
+};
+
+/// Thread function class, used as a wrapper for plain functions
+template<typename Data> struct FunctionWrapper : 
+  public GeneralFunction
+{
+  friend class Manager;
+
+  typedef void* PlainFunc( const Data& );
+
+private:
+  PlainFunc* const m_Func;
+  const Data m_Data;
+
+protected:
+  FunctionWrapper( PlainFunc* f, const Data& d ) :
+    m_Func( f ),
+    m_Data( d )
+  { }
+
+public:
+  virtual void* main( void ) {
+    return m_Func( this->m_Data );
+  }
+};
+
+}
+
+/** General ancestor of all classes encapsulating 
+ * thread function, that contain some initial data 
+ * with them.
+ *
+ * Use this class as a base class for your function 
+ * object.
+ */
+template<typename Data> struct CustomDataFunction : 
+  public Internal::GeneralFunction
+{
+  friend class Manager;
+
+protected:
+  /** Contains data passed to thread.
+   *
+   * This data is allocated dynamically, and *not*
+   * in the constructor. This is done because Manager
+   * takes care of Data setting explicitely after create.
+   *
+   * To my opinion, making data class const member and
+   * allocating it via constructor looks better, however,
+   * this will make user write additional constructor
+   * code every time it makes a descendant of CustomDataFunction,
+   * and this is not what I aim at.
+   */
+  std::auto_ptr<const Data> m_Data;
 };
 
 
 
-
-/// Thread manager class
-template<typename Data> class Manager {
+/** Thread manager class.
+ *
+ * The thread manager is a kind of wrapper around pthread_t
+ * data type. Provides handy access to all thread management
+ * routines.
+ */
+class Manager {
 private:
   /// Thread handle
   pthread_t m_Handle;
@@ -55,47 +102,72 @@ private:
   /// Actual thread function ...
   static void* ThreadFunc( void* tf )
   {
-    std::auto_ptr< CustomFunction<Data> > func_o( 
-        static_cast< CustomFunction<Data>* >( tf ) );
+    std::auto_ptr< Internal::GeneralFunction > func_o( 
+        static_cast< Internal::GeneralFunction* >( tf ) );
     return func_o->main();
+  }
+
+  void CreateThread( Internal::GeneralFunction* f )
+  {
+    // TODO : check if thread already launched
+
+    int res = pthread_create(
+        &m_Handle,
+        NULL, // TODO : may be changed later
+        ThreadFunc,
+        f );
+    if ( res != 0 )
+      throw "Thread starting failed !!!";  // TODO : something more elaborate ?
   }
 
 protected:
 
 public:
+  /// Default constructor - doesn't do anything right away,
+  // but allows to launch thread later.
   Manager( void )
+  { }
+
+  /// Constructor that automatically launches simple thread
+  template<class Data> Manager( // tags : autostart with plain function
+      typename Internal::FunctionWrapper<Data>::PlainFunc* plf, 
+      const Data& d )
   {
-    // does nothing - we don't want to fire threads right away, 
-    // preparations necessary
+    Launch( plf, d );
   }
 
   virtual ~Manager( void ) {
   }
 
-  /// Launching thread, when function class is provided
-  template< template<class Data_> class FuncObj > int Launch( const Data& d )
-  {
-    return Launch< FuncObj<Data> >( d );
-  }
+public:
+  /// For low-level operations
+  const pthread_t& Handle( void ) const
+  { return m_Handle; }
 
-  template< class FuncObj > int Launch( const Data& d )
+public:
+  template< class FuncObj, class Data > void Launch( const Data& d )
   {
     std::auto_ptr< FuncObj > func( new FuncObj );
-    CustomFunction<Data>& f = *func;
+    CustomDataFunction<Data>& f = *func;  // if this line causes compilation error, your function object is not a descendant of CustomDataFunction<Data>
     f.m_Data.reset( new Data( d ) );
 
-    int res = pthread_create(
-        &m_Handle,
-        NULL, // may be changed later
-        ThreadFunc,
-        &f
-        );
-    if ( res != 0 )
-      throw "Thread starting failed !!!";  // TODO : something more elaborate ?
+    CreateThread( &f );
 
     // if everything is OK
     func.release();
-    return res;
+  }
+
+  template<class Data> void Launch( // tags : plain function
+      typename Internal::FunctionWrapper<Data>::PlainFunc* plf, 
+      const Data& d )
+  {
+    std::auto_ptr< Internal::FunctionWrapper<Data> > 
+      func( new Internal::FunctionWrapper<Data>( plf, d ) );
+
+    CreateThread( func.get() );
+
+    // if everything is OK
+    func.release();
   }
 };
 
