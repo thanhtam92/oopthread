@@ -32,21 +32,64 @@ public:
   }
 };
 
-/// Thread function class, used as a wrapper for plain functions
-template<typename Data> struct FunctionWrapper : 
+template<typename Data> struct CustomFunctionWrapper : 
   public GeneralFunction
+{
+  typedef void* PlainFunc( const Data& );
+
+protected:
+  PlainFunc* const m_Func;
+
+  CustomFunctionWrapper( PlainFunc* f ) :
+    m_Func( f )
+  { }
+};
+
+
+
+/// Thread function class, used as a wrapper for 
+// plain functions
+//
+// Copies all the thread initial data
+template<typename Data> struct FunctionWrapper : // tags: data copy
+  public CustomFunctionWrapper<Data>
 {
   friend class Manager;
 
-  typedef void* PlainFunc( const Data& );
+  typedef typename CustomFunctionWrapper<Data>::PlainFunc PlainFunc;
 
 private:
-  PlainFunc* const m_Func;
   const Data m_Data;
 
 protected:
   FunctionWrapper( PlainFunc* f, const Data& d ) :
-    m_Func( f ),
+    CustomFunctionWrapper<Data>( f ),
+    m_Data( d )
+  { }
+
+public:
+  virtual void* main( void ) {
+    return m_Func( this->m_Data );
+  }
+};
+
+/// Thread function class, used as a wrapper for 
+// plain functions
+//
+// Copies all the thread initial data
+template<typename Data> struct FunctionWrapperDataPtr : // tags: pointer to data
+  public CustomFunctionWrapper<Data>
+{
+  friend class Manager;
+
+  typedef typename CustomFunctionWrapper<Data>::PlainFunc PlainFunc;
+
+private:
+  const Data& m_Data;
+
+protected:
+  FunctionWrapperDataPtr( PlainFunc* f, const Data& d ) :
+    CustomFunctionWrapper<Data>( f ),
     m_Data( d )
   { }
 
@@ -157,7 +200,7 @@ public:
     func.release();
   }
 
-  template<class Data> void Launch( // tags : plain function
+  template<class Data> void Launch( // tags : plain function, data copied
       typename Internal::FunctionWrapper<Data>::PlainFunc* plf, 
       const Data& d )
   {
