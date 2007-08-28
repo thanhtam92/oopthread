@@ -1,0 +1,6 @@
+#ifndef _OOPTHREAD_
+#define _OOPTHREAD_
+
+#include <pthread.h>
+
+#endif // _OOPTHREAD_
